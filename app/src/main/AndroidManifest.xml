@@ -37,7 +37,11 @@
         <activity android:name=".MapActivity"> </activity>
 
 
-        <activity android:name=".Pop"> </activity>
+        <activity android:name=".Pop"
+
+            android:theme="@style/AppTheme.CustomTheme"
+
+            > </activity>
 
     </application>
 
