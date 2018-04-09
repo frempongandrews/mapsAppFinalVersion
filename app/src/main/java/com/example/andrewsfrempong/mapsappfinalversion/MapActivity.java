@@ -1,17 +1,19 @@
 package com.example.andrewsfrempong.mapsappfinalversion;
 
-/**
- * Created by andrewsfrempong on 23/03/2018.
- */
 
 import android.*;
 import android.Manifest;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Address;
 import android.location.Geocoder;
 import android.location.Location;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
@@ -22,13 +24,16 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
 import android.widget.AutoCompleteTextView;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.example.andrewsfrempong.mapsappfinalversion.models.FoodLocation;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GooglePlayServicesNotAvailableException;
 import com.google.android.gms.common.GooglePlayServicesRepairableException;
@@ -44,6 +49,7 @@ import com.google.android.gms.location.places.Places;
 import com.google.android.gms.location.places.ui.PlacePicker;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.MapFragment;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
@@ -56,13 +62,34 @@ import com.google.android.gms.tasks.Task;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import com.example.andrewsfrempong.mapsappfinalversion.models.PlaceInfo;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 
 public class MapActivity extends AppCompatActivity implements OnMapReadyCallback,
-        GoogleApiClient.OnConnectionFailedListener{
+        GoogleApiClient.OnConnectionFailedListener {
+
+    //    private String BASE_URL = "http://sandbox.kriswelsh.com/hygieneapi/hygiene.php?op=s_loc&lat=" + 53.471387 +
+//            "&long=" + -2.162422;
+
+//    public Double currentLat;
+//    public Double currentLon;
+
+//    public String BASE_URL = "http://sandbox.kriswelsh.com/hygieneapi/hygiene.php?op=s_loc&lat=" + currentLat +
+//            "&long=" + currentLon;
+
+    public String BASE_URL = "";
+
+    ArrayList<FoodLocation> closeFoodLocations = new ArrayList<>();
 
     @Override
     public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
@@ -87,6 +114,9 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             mMap.getUiSettings().setMyLocationButtonEnabled(false);
 
             init();
+
+
+
         }
     }
 
@@ -114,21 +144,29 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private GoogleApiClient mGoogleApiClient;
     private PlaceInfo mPlace;
     private Marker mMarker;
+    private Button showCloseLocationsBtn;
+
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+
+
+
+
         setContentView(R.layout.activity_map);
         mSearchText = (AutoCompleteTextView) findViewById(R.id.input_search);
         mGps = (ImageView) findViewById(R.id.ic_gps);
         mInfo = (ImageView) findViewById(R.id.place_info);
         mPlacePicker = (ImageView) findViewById(R.id.place_picker);
-
+        showCloseLocationsBtn = (Button) findViewById(R.id.showCloseLocationsBtn);
         getLocationPermission();
 
     }
 
-    private void init(){
+    private void init() {
+
         Log.d(TAG, "init: initializing");
 
         mGoogleApiClient = new GoogleApiClient
@@ -148,18 +186,22 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         mSearchText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             @Override
             public boolean onEditorAction(TextView textView, int actionId, KeyEvent keyEvent) {
-                if(actionId == EditorInfo.IME_ACTION_SEARCH
+                if (actionId == EditorInfo.IME_ACTION_SEARCH
                         || actionId == EditorInfo.IME_ACTION_DONE
                         || keyEvent.getAction() == KeyEvent.ACTION_DOWN
-                        || keyEvent.getAction() == KeyEvent.KEYCODE_ENTER){
+                        || keyEvent.getAction() == KeyEvent.KEYCODE_ENTER) {
 
                     //execute our method for searching
                     geoLocate();
+
+                    hideSoftKeyboard();
                 }
 
                 return false;
             }
         });
+
+
 
         mGps.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -169,28 +211,35 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             }
         });
 
+        showCloseLocationsBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                startActivity(new Intent(MapActivity.this, Pop.class));
+            }
+        });
+
+
+
         mInfo.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 Log.d(TAG, "onClick: clicked place info");
-                try{
-                    if(mMarker.isInfoWindowShown()){
-                        mMarker.hideInfoWindow();
-                    }else{
-                        Log.d(TAG, "onClick: place info: " + mPlace.toString());
-                        mMarker.showInfoWindow();
-                    }
-                }catch (NullPointerException e){
-                    Log.e(TAG, "onClick: NullPointerException: " + e.getMessage() );
-                }
+
+                Log.d(TAG, "##########################Executing requestData. BASE_URL: " + BASE_URL);
+                requestData(BASE_URL);
+
             }
         });
+
+
+
 
         mPlacePicker.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
 
                 PlacePicker.IntentBuilder builder = new PlacePicker.IntentBuilder();
+                Toast.makeText(MapActivity.this, "Showing closest places", Toast.LENGTH_SHORT).show();
 
                 try {
                     startActivityForResult(builder.build(MapActivity.this), PLACE_PICKER_REQUEST);
@@ -199,6 +248,9 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 } catch (GooglePlayServicesNotAvailableException e) {
                     Log.e(TAG, "onClick: GooglePlayServicesNotAvailableException: " + e.getMessage() );
                 }
+
+
+
             }
         });
 
@@ -206,6 +258,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     }
 
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+
+
         if (requestCode == PLACE_PICKER_REQUEST) {
             if (resultCode == RESULT_OK) {
                 Place place = PlacePicker.getPlace(this, data);
@@ -213,24 +267,29 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 PendingResult<PlaceBuffer> placeResult = Places.GeoDataApi
                         .getPlaceById(mGoogleApiClient, place.getId());
                 placeResult.setResultCallback(mUpdatePlaceDetailsCallback);
+
+                System.out.println("(********************************");
             }
         }
     }
 
-    private void geoLocate(){
+    private void geoLocate() {
+
+        Toast.makeText(this, "running geolocate", Toast.LENGTH_SHORT).show();
+
         Log.d(TAG, "geoLocate: geolocating");
 
         String searchString = mSearchText.getText().toString();
 
         Geocoder geocoder = new Geocoder(MapActivity.this);
         List<Address> list = new ArrayList<>();
-        try{
+        try {
             list = geocoder.getFromLocationName(searchString, 1);
-        }catch (IOException e){
-            Log.e(TAG, "geoLocate: IOException: " + e.getMessage() );
+        } catch (IOException e) {
+            Log.e(TAG, "geoLocate: IOException: " + e.getMessage());
         }
 
-        if(list.size() > 0){
+        if (list.size() > 0) {
             Address address = list.get(0);
 
             Log.d(TAG, "geoLocate: found a location: " + address.toString());
@@ -238,54 +297,34 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
             moveCamera(new LatLng(address.getLatitude(), address.getLongitude()), DEFAULT_ZOOM,
                     address.getAddressLine(0));
+            hideSoftKeyboard();
         }
     }
 
-    private void getDeviceLocation(){
-        Log.d(TAG, "getDeviceLocation: getting the devices current location");
+    private void getDeviceLocation() {
+        Log.d(TAG, "************************************getDeviceLocation: getting current location");
 
         mFusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this);
 
         try{
             if(mLocationPermissionsGranted){
 
-                final Task location = mFusedLocationProviderClient.getLastLocation();
+                 Task location = mFusedLocationProviderClient.getLastLocation();
                 location.addOnCompleteListener(new OnCompleteListener() {
                     @Override
                     public void onComplete(@NonNull Task task) {
-                        if(task.isSuccessful()){
-                            Log.d(TAG, "onComplete: found location!");
+                        if(task.isSuccessful()) {
+
                             Location currentLocation = (Location) task.getResult();
+
+                            Log.d(TAG, "onComplete: found location!******************************" + currentLocation );
 
                             moveCamera(new LatLng(currentLocation.getLatitude(), currentLocation.getLongitude()),
                                     DEFAULT_ZOOM,
                                     "My Location");
 
+                            //Toast.makeText(MapActivity.this, "location: " + currentLocation.getLatitude() + "longitude: " + currentLocation.getLongitude(), Toast.LENGTH_SHORT).show();
 
-
-
-
-
-                            //Get 10 closest locations around
-
-
-                            
-
-
-
-
-
-
-
-
-
-
-
-
-
-                        }else{
-                            Log.d(TAG, "onComplete: current location is null");
-                            Toast.makeText(MapActivity.this, "unable to get current location", Toast.LENGTH_SHORT).show();
                         }
                     }
                 });
@@ -293,10 +332,17 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }catch (SecurityException e){
             Log.e(TAG, "getDeviceLocation: SecurityException: " + e.getMessage() );
         }
+
+
+        hideSoftKeyboard();
+
+
     }
 
     private void moveCamera(LatLng latLng, float zoom, PlaceInfo placeInfo){
-        Log.d(TAG, "moveCamera: moving the camera to: lat: " + latLng.latitude + ", lng: " + latLng.longitude );
+        //BASE_URL = "http://sandbox.kriswelsh.com/hygieneapi/hygiene.php?op=s_loc&lat=" + latLng.latitude +
+                //"&long=" + latLng.longitude;
+        //Log.d(TAG, "moveCamera: moving the camera to: lat: " + latLng.latitude + ", lng: " + latLng.longitude + "BASE URL: " + BASE_URL);
         mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, zoom));
 
         mMap.clear();
@@ -316,11 +362,14 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                         .snippet(snippet);
                 mMarker = mMap.addMarker(options);
 
+
+
             }catch (NullPointerException e){
                 Log.e(TAG, "moveCamera: NullPointerException: " + e.getMessage() );
             }
         }else{
             mMap.addMarker(new MarkerOptions().position(latLng));
+
         }
 
         hideSoftKeyboard();
@@ -328,6 +377,11 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private void moveCamera(LatLng latLng, float zoom, String title){
         Log.d(TAG, "moveCamera: moving the camera to: lat: " + latLng.latitude + ", lng: " + latLng.longitude );
+
+
+        BASE_URL = "http://sandbox.kriswelsh.com/hygieneapi/hygiene.php?op=s_loc&lat=" + latLng.latitude +
+            "&long=" + latLng.longitude;
+        Log.d(TAG, "moveCamera: moving the camera to: lat: " + latLng.latitude + ", lng: " + latLng.longitude + "BASE URL: " + BASE_URL);
         mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, zoom));
 
         if(!title.equals("My Location")){
@@ -335,10 +389,39 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                     .position(latLng)
                     .title(title);
             mMap.addMarker(options);
+
+
+
+
         }
 
         hideSoftKeyboard();
     }
+
+
+    //////////////////////////////////////Http request for close 10 locations
+
+    //1. Get location DONE
+    //TODO
+    //2.download data and save in arrayList
+    //3.on button click -> show data in another activity
+
+
+    //Checking for network connection
+    private boolean isNetworkConnected() {
+        ConnectivityManager connMgr = (ConnectivityManager)
+                getSystemService(Context.CONNECTIVITY_SERVICE); // 1
+        NetworkInfo networkInfo = connMgr.getActiveNetworkInfo(); // 2
+        return networkInfo != null && networkInfo.isConnected(); // 3
+    }
+
+
+
+
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
     private void initMap(){
         Log.d(TAG, "initMap: initializing map");
@@ -395,7 +478,9 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     }
 
     private void hideSoftKeyboard(){
-        this.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+        //this.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0);
     }
 
     /*
@@ -454,9 +539,130 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                     place.getViewport().getCenter().longitude), DEFAULT_ZOOM, mPlace);
 
             places.release();
+
+
         }
     };
-}
+
+
+
+
+        public void requestData(String url) {
+
+            if (isNetworkConnected()) {
+            RequestPackage requestPackage = new RequestPackage();
+            requestPackage.setMethod("GET");
+            requestPackage.setUrl(url);
+
+            Downloader downloader = new Downloader(); //Instantiation of the Async task
+            //that’s defined below
+
+                downloader.execute(requestPackage);
+
+            }
+        }
+
+
+
+        //TODO: GOT ALL closeLocations
+        //TODO NEXT: show closeLocations on table view
+
+           class Downloader extends AsyncTask<RequestPackage, String, String> {
+
+            ArrayList<FoodLocation> resultFoodLocations = new ArrayList<FoodLocation>();
+
+            ArrayList<FoodLocation> foodLocations = new ArrayList<FoodLocation>();
+
+            @Override
+            protected String doInBackground(RequestPackage... params) {
+
+                //Log.d(HttpManager.getData(params[0]);
+
+                return HttpManager.getData(params[0]);
+            }
+
+            //The String that is returned in the doInBackground() method is sent to the
+            // onPostExecute() method below. The String should contain JSON data.
+            @Override
+            protected void onPostExecute(String result) {
+                try {
+                    //We need to convert the string in result to a JSONObject
+
+
+
+                    JSONArray jsonArray = new JSONArray(result);
+
+//                String price = jsonObject.getString("ask");
+
+                    String name = null;
+                    String address1 = null;
+                    String address2 = null;
+                    String address3 = null;
+                    String postcode = null;
+                    String fullAddress = null;
+                    String rating = null;
+                    String ratingDate = null;
+                    Double latitude = null;
+                    Double longitude = null;
+                    String distanceInKm = null;
+
+                    for (int i = 0; i < jsonArray.length(); i++) {
+                        JSONObject jsonobject = jsonArray.getJSONObject(i);
+                        name = jsonobject.getString("BusinessName");
+                        address1 = jsonobject.getString("AddressLine1");
+                        address2 = jsonobject.getString("AddressLine2");
+                        address3 = jsonobject.getString("AddressLine3");
+                        postcode = jsonobject.getString("PostCode");
+                        fullAddress = address1 + " " + address2 + ", " + address3 + ", " + postcode;
+                        rating = jsonobject.getString("RatingValue");
+                        ratingDate = jsonobject.getString("RatingDate");
+                        latitude = Double.parseDouble(jsonobject.getString("Latitude"));
+                        longitude = Double.parseDouble(jsonobject.getString("Longitude"));
+                        distanceInKm = jsonobject.getString("DistanceKM");
+
+
+                        //create places with data
+                        //TODO
+                        FoodLocation newFoodLocation = new FoodLocation(name, fullAddress, rating, ratingDate, latitude, longitude, distanceInKm);
+                        foodLocations.add(newFoodLocation);
+
+                        Log.d("TAG", "$$$$$$$$$$$$$$$$$$$ newFoodLocation: " + newFoodLocation);
+                    }
+
+
+
+                    closeFoodLocations = foodLocations;
+
+                    Log.d("TAG", "$$$$$$$******************$$$$$$$$$$$$ closeFoodLocations: " + closeFoodLocations);
+
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+            }
+
+
+
+
+
+        }
+
+
+
+
+
+
+
+
+
+    }//End of MapActivity
+
+
+
+
+
+
+
+
 
 
 

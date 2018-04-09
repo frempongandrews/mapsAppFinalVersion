@@ -1,8 +1,5 @@
 package com.example.andrewsfrempong.mapsappfinalversion.models;
 
-/**
- * Created by andrewsfrempong on 23/03/2018.
- */
 
 import android.net.Uri;
 
